@@ -104,6 +104,27 @@ def test_single_node_cli_without_dump(tmp_path, monkeypatch):
         ]
 
 
+def test_leaf_cli_with_missing_wikidata_qid(tmp_path, monkeypatch, caplog):
+    database_path = tmp_path / "test.sqlite"
+    config_path = tmp_path / "appconfig.ini"
+    config_path.write_text(f"[db]\nuri = sqlite://{database_path}\n")
+    db = connect_to_database(f"sqlite://{database_path}")
+    db.executesql(
+        "INSERT INTO ordered_leaves (ott, name, wikidata) VALUES (?, ?, ?)",
+        (3595676, "Glaucidium castanonotum", None),
+    )
+    db.commit()
+    db.close()
+    monkeypatch.setattr(
+        vernaculars, "get_wikidata_json_for_qid", lambda *args, **kwargs: pytest.fail("Wikidata API called")
+    )
+    monkeypatch.setattr("sys.argv", ["get_wiki_vernaculars", "leaf", "3595676", "-v", "--conf-file", str(config_path)])
+    vernaculars.main()
+    assert "No Wikidata QID for '3595676'" in caplog.text
+    with sqlite3.connect(database_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM vernacular_by_ott").fetchone() == (0,)
+
+
 def test_single_taxon_ambiguous_and_missing_qid(tree_db, monkeypatch, caplog):
     tree_db.executesql("INSERT INTO ordered_leaves VALUES (5, 20, 201, 'Other')")
     monkeypatch.setattr(vernaculars, "get_wikidata_json_for_qid", lambda *args, **kwargs: pytest.fail("API called"))
